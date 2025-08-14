@@ -14,48 +14,51 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python version
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Create and start virtual environment
+      - name: Install dependencies locally (to package with app)
         run: |
           python -m venv venv
           source venv/bin/activate
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-        
-      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          deactivate
 
-      - name: Upload artifact for deployment jobs
+      - name: Prepare deployment package
+        run: |
+          mkdir package
+          cp -r app.py db.py requirements.txt utils routes email_services package/
+          cp -r venv/lib/python3.12/site-packages package/
+          cd package && zip -r ../app_package.zip . && cd ..
+
+      - name: Upload deployment package
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: |
-            .
-            !venv/
+          path: app_package.zip
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    
+
     steps:
-      - name: Download artifact from build job
+      - name: Download deployment package
         uses: actions/download-artifact@v4
         with:
           name: python-app
-      
-      - name: 'Deploy to Azure Web App'
+
+      - name: Deploy to Azure Web App (Run from Package)
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'trainings-backend'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_7F69CE5B4E4A47A7B587986DEF4F83A1 }}
+          package: app_package.zip
